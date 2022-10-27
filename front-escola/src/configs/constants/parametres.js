@@ -1,0 +1,2 @@
+export const NOTE_ELIMINATOIRE = 'NOTE_ELIMINATOIRE'
+export const MOYENNE_DELIBERABLE = ''

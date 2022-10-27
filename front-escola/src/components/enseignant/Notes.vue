@@ -1,0 +1,1020 @@
+<template>
+  <!-- if you want automatic padding use "layout-padding" class -->
+  <div class="layout-padding">
+    <!-- your content -->
+    <div class="row" style="padding-left: 10px;padding-right: 10px;">
+      <div class="col-md col-sm-3">
+        <q-select
+          style="margin-top: 0;"
+          color="primary"
+          float-label="Session "
+          v-model="session"
+          :options="sessionOptions"
+        />
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-12">
+        <q-card v-if="selectedEc.id">
+          <div v-if="session !== 0" class="text-center content-center" style="padding: 10px">
+            <q-btn v-if="!isNoteSessionValide" color="primary" style="height: 50px;" rounded class="col-md-7 col-sm-12 col-12"
+                   @click="validerNotes()" :disabled="validationEnCours || etudiants.length === 0">
+              <span v-if="validationEnCours">
+                Validation en cours&nbsp;&nbsp;
+                <q-spinner-dots></q-spinner-dots>
+              </span>
+              <span v-else>Valider les notes</span>
+            </q-btn>
+            <q-btn v-else color="primary" outline icon-left icon="check" style="height: 50px;" rounded class="col-md-7 col-sm-12 col-12"
+                   @click="">Notes validés
+            </q-btn>
+          </div>
+          <!-- ToDo: change background color to look better ;) -->
+          <div v-else style="padding: 10px; margin: 0; font-size: 24px; text-align: center; background-color: deepskyblue; color: whitesmoke" class="light-paragraph">Notes définitives</div>
+          <q-data-table
+            :data="etudiants"
+            :config="config"
+            :columns="columns"
+            :refresh="getNotesByFilter"
+            class="bg-white"
+            ref="datatable"
+          >
+            <!-- Custom renderer when user selected one or more rows -->
+            <template slot="selection" slot-scope="selection" v-if="session !== 0">
+              <q-btn color="primary" icon="assignment" v-if="!isNoteSessionValide" @click="openUpdateNoteModal(selection)">
+                <span class="gt-sm">Modifier note </span>
+              </q-btn>
+              <q-btn color="negative" icon="assignment" v-if="!isNoteSessionValide" @click="deleteNote(selection)">
+                <span class="gt-sm">Supprimer note </span>
+              </q-btn>
+              <q-btn color="secondary" icon="assignment_ind" @click="voirDetailEtudiant(selection)">
+                <span class="gt-sm">Voir details</span>
+              </q-btn>
+            </template>
+
+            <!--<template slot="col-etat" slot-scope="item">
+              <q-chip v-if="item.data === 'Disponible'" tag color="green">Disponible</q-chip>
+              <q-chip v-else tag color="red">Non Disponible</q-chip>
+            </template>-->
+
+            <template slot="col-photo" slot-scope="item">
+              <q-item>
+                <q-item-side avatar="statics/photovide.png" />
+              </q-item>
+            </template>
+          </q-data-table>
+        </q-card>
+      </div>
+    </div>
+
+    <q-fixed-position corner="bottom-left" :offset="[18, 18]" v-if="selectedEc.id">
+      <q-fab color="primary" push icon="settings" direction="right">
+        <q-btn
+          round
+          color="primary"
+          @click="printNoteEtudiants()"
+          class="animate-pop"
+        >
+          <q-tooltip anchor="center right" self="center left" :offset="[10, 10]">Imprimer la liste des notes</q-tooltip>
+          <q-icon name="print" />
+        </q-btn>
+        <!--<q-btn
+          round
+          color="primary"
+          @click="toggleSelect()"
+          class="animate-pop"
+        >
+          <q-tooltip anchor="center right" self="center left" :offset="[10, 10]">Selectionner tout</q-tooltip>
+          <q-icon name="done_all" />
+        </q-btn>-->
+        <q-btn
+          :disabled="isNoteSessionValide"
+          round
+          color="primary"
+          @click="openNoteModal()"
+          class="animate-pop"
+        >
+          <q-tooltip anchor="center right" self="center left" :offset="[10, 10]">Ajouter une note</q-tooltip>
+          <q-icon name="add" />
+        </q-btn>
+        <!--<q-btn
+          round
+          color="primary"
+          @click=""
+          class="animate-pop"
+        >
+          <q-tooltip anchor="center right" self="center left" :offset="[10, 10]">Exporter en excel</q-tooltip>
+          <q-icon name="fa-file-excel-o" />
+        </q-btn>-->
+      </q-fab>
+    </q-fixed-position>
+
+    <!-- Modal add Note -->
+    <q-modal ref="noteModal" class="_noteModal" v-model="noteModal" @open="actionModalOpen()"
+             :content-css="{borderRadius: '4px', paddingBottom: '20px',minWidth: '40vw', minHeight: '80vh'}" no-backdrop-dismiss>
+      <q-modal-layout>
+        <div slot="header" class="text-grey-8" style="border-bottom: 1px solid lightgrey;">
+          <div class="text-center">
+            <div class="col-sm-12 layout-padding ">
+              <div style="margin: 0;font-size: 24px" class="light-paragraph">Ajout d'une note</div>
+            </div>
+          </div>
+          <q-btn flat round small @click="$refs.noteModal.close()" style="position: absolute;top: 1em;right: 1em">
+            <q-icon name="close" />
+          </q-btn>
+        </div>
+        <div v-if="!(etudiantsFiltred.length === 0 && !previous)">
+          <div class="_modal-content">
+            <div class="row sm-gutter">
+              <div class="col-md-7">
+                <q-field
+                  icon="account_circle"
+                  label=""
+                  helper="numéro Matricule de l'étudiant"
+                >
+                  <q-input v-model="etudiant.numero" @blur="checkEtudiant()" @change="checkEtudiant2()" float-label="Matricule" id="matricule" @keyup.enter="focusToNote()">
+                    <q-autocomplete
+                      @search="search"
+                      @selected="selected"
+                    />
+                  </q-input>
+                </q-field>
+              </div>
+            </div>
+          </div>
+          <div class="_modal-content" style="border-bottom: none; margin-top: -30px">
+            <div class="row sm-gutter">
+              <div class="col-md-7">
+                <q-field
+                  icon="rate_review"
+                  label=""
+                  helper="Insérer la note de l'étudiant"
+                >
+                  <q-input ref="note" v-model="etudiant.note" float-label="Note" id="note" @keyup.enter="addToNoteToBeSend(etudiant)"/>
+                </q-field>
+              </div>
+            </div>
+          </div>
+          <div class="_modal-content" style="border-bottom: none;">
+            <div class="row">
+              <div class="col">
+                <q-btn class="shadow-0" flat color="primary" :disable="indexArrayEtudiant === -1 || (previous && indexArrayEtudiant === 0)" icon="chevron_left" @click="showPreviousNotes()">
+                  Precedent
+                </q-btn>
+              </div>
+              <div class="col flex justify-end">
+                <q-btn id="btn_suivant" class="shadow-0" flat color="primary" :disable="etudiantsFiltred.length === 0 && !previous" @click="addToNoteToBeSend(etudiant)" icon-right="chevron_right">
+                  Suivant
+                </q-btn>
+              </div>
+            </div>
+          </div>
+          <div class="_modal-content">
+            <div style="font-size: 18px;" class="text-grey-8 text-italic">Résumé</div>
+            <div class="q-item-sublabel text-italic">Note de {{ selectedEc.libelle }}</div><br />
+            <div class="row sm-gutter">
+              <div class="col-md-8">
+                <!--<q-input v-model="email" type="email" float-label="Numéro matricule de l'étudiant" clearable/>-->
+                <div class="text-grey-8 text-italic" style="font-size: 23px">{{ etudiant.nom }} {{ etudiant.prenom }}</div>
+                <div class="text-italic text-grey">Matricule : <b>{{ etudiant.numero }}</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="text-center content-center _modal-content" style="margin-top: 20px" v-else>
+          <blockquote>
+            <p>
+              Vous avez ajouté toutes les notes
+            </p>
+            <small v-if="etudiants.length !== etudiantsFiltredSave.length"><cite title="Quasar Framework"><a @click="previous = true">modifier</a></cite></small>
+          </blockquote>
+        </div>
+        <div slot="footer" :class="'_no-shadow'" style="padding: 15px 100px 20px;">
+          <div class="flex flex-center">
+            <q-btn color="primary" style="height: 50px;" rounded push class="col-md-7 col-sm-12 col-12"
+                   @click="insererEtudiant()">Ajouter
+            </q-btn>
+          </div>
+        </div>
+      </q-modal-layout>
+    </q-modal>
+
+    <!--Modal update Note-->
+    <q-modal ref="modalUpdateNote" class="_noteModal" v-model="modalUpdateNote"
+             :content-css="{borderRadius: '4px', paddingBottom: '20px',minWidth: '40vw', minHeight: '70vh'}">
+      <q-modal-layout>
+        <div slot="header" class="text-grey-8" style="border-bottom: 1px solid lightgrey;">
+          <div class="text-center">
+            <div class="col-sm-12 layout-padding ">
+              <div style="margin: 0;font-size: 24px" class="light-paragraph">Modification d'une note</div>
+            </div>
+          </div>
+          <q-btn flat round small @click="$refs.modalUpdateNote.close()" style="position: absolute;top: 1em;right: 1em">
+            <q-icon name="close" />
+          </q-btn>
+        </div>
+        <div>
+          <div class="_modal-content">
+            <div class="row sm-gutter">
+              <div class="col-md-7">
+                <q-field
+                  icon="account_circle"
+                  label=""
+                  helper="numéro Matricule de l'étudiant"
+                >
+                  <q-input v-model="selectedNoteUpdate.etudiant.numeroMatricule" float-label="Matricule" disable>
+                  </q-input>
+                </q-field>
+              </div>
+            </div>
+          </div>
+          <div class="_modal-content" style="border-bottom: none; margin-top: -30px">
+            <div class="row sm-gutter">
+              <div class="col-md-7">
+                <q-field
+                  icon="rate_review"
+                  label=""
+                  helper="Insérer la note de l'étudiant"
+                >
+                  <q-input ref="note" v-model="selectedNoteUpdate.noteEc" float-label="Note"/>
+                </q-field>
+              </div>
+            </div>
+          </div>
+          <div class="_modal-content">
+            <div style="font-size: 18px;" class="text-grey-8 text-italic">Résumé</div>
+            <div class="q-item-sublabel text-italic">Note de {{ selectedEc.libelle }}</div><br />
+            <div class="row sm-gutter">
+              <div class="col-md-8">
+                <!--<q-input v-model="email" type="email" float-label="Numéro matricule de l'étudiant" clearable/>-->
+                <div class="text-grey-8 text-italic" style="font-size: 23px">{{ selectedNoteUpdate.etudiant.idPersonne.nom }} {{ selectedNoteUpdate.etudiant.idPersonne.prenom }}</div>
+                <div class="text-italic text-grey">Matricule : <b>{{ selectedNoteUpdate.etudiant.numeroMatricule }}</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div slot="footer" :class="'_no-shadow'" style="padding: 15px 100px 20px;">
+          <div class="flex flex-center">
+            <q-btn color="primary" style="height: 50px; margin-right: 10px" class=""
+                   @click="updateNote()">Modifier
+            </q-btn>
+            <q-btn color="white" style="height: 50px;" class="text-black"
+                   @click="resetNoteValue()">Annuler
+            </q-btn>
+          </div>
+        </div>
+      </q-modal-layout>
+    </q-modal>
+
+
+    <q-modal @close="previous = true" ref="verificationModal" v-model="verificationModal" class="_verificationModal"  :content-css="{borderRadius: '4px', paddingBottom: '20px',minWidth: '40vw', minHeight: '80vh'}">
+      <q-modal-layout>
+        <div slot="header" class="text-grey-8" style="border-bottom: 1px solid lightgrey;">
+          <div class="text-center">
+            <div class="col-sm-12 layout-padding ">
+              <div style="margin: 0;font-size: 24px" class="light-paragraph">Liste des notes</div>
+            </div>
+          </div>
+          <q-btn flat round small @click="$refs.verificationModal.close()" style="position: absolute;top: 1em;right: 1em">
+            <q-icon name="close" />
+          </q-btn>
+        </div>
+        <div class="_modal-content">
+          <pre class="">
+            <code class="language-javascript">
+              {{ notesToSend }}
+            </code>
+          </pre>
+        </div>
+        <div slot="footer" :class="'_no-shadow'" style="padding: 15px 100px 20px;">
+          <div class="text-center content-center">
+            <q-btn color="secondary" style="height: 50px;" rounded push class="col-md-7 col-sm-12 col-12"
+                   @click="insererNotesEtudiants()">Valider
+            </q-btn>
+            <q-btn color="white" style="height: 50px;" rounded push class="col-md-7 col-sm-12 col-12 text-black"
+                   @click="$refs.verificationModal.close()">Modifier
+            </q-btn>
+          </div>
+        </div>
+      </q-modal-layout>
+    </q-modal>
+    <q-modal ref="voirDetails" maximized v-model="openDetailsEtudiantModal">
+      <voir-details ref="voirDetailsModal"></voir-details>
+    </q-modal>
+  </div>
+</template>
+
+<script>
+  import {
+    QCard,
+    QCardTitle,
+    QDataTable,
+    QBtn,
+    QIcon,
+    Loading,
+    Dialog,
+    Alert,
+    QItem,
+    QItemSide,
+    QItemTile,
+    QItemMain,
+    QSelect,
+    QTooltip,
+    QFixedPosition,
+    QCheckbox,
+    QChip,
+    QModal,
+    QModalLayout,
+    QInput,
+    QField,
+    QDatetime,
+    QFab,
+    QCollapsible,
+    QList,
+    QSideLink,
+    Toast,
+    QAutocomplete,
+    QSpinnerDots
+
+  } from 'quasar'
+
+  import VoirDetails from '../scolarite/etudiant/VoirDetailsModal.vue'
+  import { map, filter, first } from 'lodash'
+  import { required, between } from 'vuelidate/lib/validators'
+  import 'quasar-extras/animate/bounceInRight.css'
+  import 'quasar-extras/animate/bounceOutRight.css'
+  import Axios from '../../configs/axios'
+
+  export default {
+    components: {
+      QCard,
+      QCardTitle,
+      QDataTable,
+      QBtn,
+      QIcon,
+      Loading,
+      Alert,
+      QItem,
+      QItemSide,
+      QItemTile,
+      QItemMain,
+      QSelect,
+      QTooltip,
+      QFixedPosition,
+      QCheckbox,
+      QChip,
+      QModal,
+      QModalLayout,
+      QInput,
+      QField,
+      QDatetime,
+      QFab,
+      QCollapsible,
+      QList,
+      QSideLink,
+      VoirDetails,
+      QAutocomplete,
+      QSpinnerDots
+    },
+    data () {
+      return {
+        isNoteSessionValide: false,
+        validationEnCours: false,
+        modalUpdateNote: false,
+        OldselectedNoteUpdate: null,
+        selectedNoteUpdate: {
+          etudiant: {
+            idPersonne: {
+            }
+          }
+        },
+        focus: false,
+        monthNames: ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'],
+        dayNames: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
+        messageAjoutInscription: false,
+        noteModal: false,
+        etudiants: [],
+        config: {
+          rowHeight: '60px',
+          title: '<span style="color: rgba(0,0,0,0.54);font-weight: bold;font-size: 95%;">Listes des notes</span>',
+          refresh: true,
+          columnPicker: true,
+          bodyStyle: {
+            maxHeight: '400px'
+          },
+          responsive: true,
+          pagination: {
+            rowsPerPage: 15,
+            options: [5, 10, 15, 30]
+          },
+          selection: 'single',
+          messages: {
+            noData: 'Aucune données dans la base données',
+            noDataAfterFiltering: 'Aucun résultat. Veuillez raffiner les termes de votre recherche.'
+          },
+          labels: {
+            columns: 'Colonnes',
+            allCols: 'Toutes',
+            rows: 'Lignes',
+            selected: {
+              singular: 'etudiant séléctionné.',
+              plural: 'etudiants séléctionnés.'
+            },
+            clear: 'Annuler',
+            search: 'Recherche',
+            all: 'Tous'
+          }
+        },
+        columns: [
+          {
+            label: 'Numero',
+            field: 'etudiant',
+            width: '50px',
+            type: 'number',
+            filter: true,
+            format (value) {
+              return value.numeroMatricule
+            }
+          },
+          {
+            label: 'Nom',
+            field: 'etudiant',
+            width: '75px',
+            filter: true,
+            type: 'string',
+            format (value) {
+              return value.idPersonne.nom
+            }
+          },
+          {
+            label: 'Prénoms',
+            field: 'etudiant',
+            width: '100px',
+            filter: true,
+            type: 'string',
+            format (value) {
+              return value.idPersonne.prenom
+            }
+          },
+          {
+            label: 'Note',
+            field: 'noteEc',
+            width: '50px',
+            filter: true,
+            sort: true,
+            type: 'number'
+          }
+        ],
+        ue: [],
+        annee: '',
+        mention: '',
+        parcours: '',
+        semestre: '',
+        session: '',
+        sessionOptions: [],
+        // Data for modal
+        numeroMatricule: '',
+        bourse: {
+          nature: '',
+          taux: '',
+          montant: ''
+        },
+        quitus: {
+          logement: false,
+          sport: false,
+          bibliotheque: false
+        },
+        // toogling all selection in datatable
+        selectAll: false,
+        openDetailsEtudiantModal: false,
+        numAuto: false,
+        verificationModal: false,
+        oldEtudiant: null,
+        etudiant: {
+          id: null,
+          numero: '',
+          note: '',
+          nom: '',
+          prenom: ''
+        },
+        notes: [],
+        selectedEc: {},
+        etudiantsFiltred: [],
+        etudiantsFiltredSave: [],
+        notesToSend: [],
+        notesWrapper: null,
+        indexArrayEtudiant: -1,
+        arrayEtudiantModal: [],
+        previous: false,
+        isSelectedEtudiant: false
+      }
+    },
+    validations: {
+      etudiant: {
+        numero: { required },
+        note: { required, between: between(0, 20) }
+      }
+    },
+    watch: {
+      session: function (val) {
+        if (val) {
+          this.getNotesByFilter(this.selectedEc)
+          this.checkIfNoteSessionValide()
+        }
+      },
+      noteModal: function (val) {
+        if (!val) {
+          this.getNotesByFilter(this.selectedEc)
+          this.arrayEtudiantModal = []
+          this.notesToSend = []
+          this.oldEtudiant = null
+          this.indexArrayEtudiant = -1
+          this.previous = false
+        }
+        this.etudiant = {
+          id: null,
+          numero: '',
+          note: '',
+          nom: '',
+          prenom: ''
+        }
+      }
+    },
+    methods: {
+      printNoteEtudiants () {
+        let params = {
+          idEc: this.selectedEc.id,
+          idAnneeUniversitaire: this.annee,
+          idSemestre: this.semestre,
+          idParcours: this.parcours,
+          idSession: this.session
+        }
+        if (params.idEc !== undefined && params.idAnneeUniversitaire !== undefined && params.idSemestre !== undefined && params.idParcours !== undefined) {
+          Loading.show()
+          if (params.idSession > 0) {
+            this.$store.dispatch('note/printNoteEtudiants', params)
+              .then((res) => {
+                let tab = window.open(process.env.API_BASE_URL + res.url, '_blank')
+                if (tab) {
+                  Loading.hide()
+                  tab.focus()
+                }
+                else {
+                  Loading.hide()
+                  console.log('please allow pop up for this site')
+                }
+              })
+              .catch((err) => {
+                Loading.hide()
+                this.$alert.error('Une erreur est survenue. Il y a un problème dans votre Navigateur')
+                console.log(err)
+              })
+          }
+          else {
+            this.$store.dispatch('note/printNoteDefEtudiants', params)
+              .then((res) => {
+                let tab = window.open(process.env.API_BASE_URL + res.url, '_blank')
+                if (tab) {
+                  Loading.hide()
+                  tab.focus()
+                }
+                else {
+                  Loading.hide()
+                  console.log('please allow pop up for this site')
+                }
+              })
+              .catch((err) => {
+                Loading.hide()
+                this.$alert.error('Une erreur est survenue. Il y a un problème dans votre Navigateur')
+                console.log(err)
+              })
+          }
+        }
+      },
+      deleteNote (selection) {
+        let params = {
+          idEc: this.selectedEc.id,
+          idAnneeUniversitaire: this.annee,
+          idEtudiant: selection.rows[0].data.etudiant.id,
+          idSemestre: this.semestre,
+          idSession: this.session,
+          etudiant: selection.rows[0].data.etudiant.id,
+          noteEc: selection.rows[0].data.noteEc
+        }
+        console.log('note to be deleted', params)
+        Dialog.create({
+          title: '<div style="color: red;">Suppression</div>',
+          message: `Voulez-vous vraiment supprimer cette note ?`,
+          buttons: [
+            'Annuler',
+            {
+              label: '<div style="color: red;">Oui, supprimer définitivement</div>',
+              handler: () => {
+                this.$store.dispatch('note/deleteNote', params)
+                  .then((res) => {
+                    console.log('Res Delete Note', res)
+                    this.getNotesByFilter(this.selectedEc)
+                    this.$alert.success('Suppression réussie')
+                  })
+                  .catch((err) => {
+                    console.log('Error Delete Note', err)
+                    this.$alert.error('Une erreur est survenue lors de la suppression')
+                  })
+              }
+            }
+          ]
+        })
+      },
+      resetNoteValue () {
+        let compareId = (at) => {
+          return at.etudiant.numeroMatricule === this.OldselectedNoteUpdate.etudiant.numeroMatricule
+        }
+        let index = this.etudiants.findIndex(compareId)
+        this.etudiants.splice(index, 1, this.OldselectedNoteUpdate)
+        this.selectedNoteUpdate = this.OldselectedNoteUpdate
+        this.modalUpdateNote = false
+      },
+      updateNote () {
+        let params = {
+          idEc: this.selectedEc.id,
+          idAnneeUniversitaire: this.annee,
+          idEtudiant: this.selectedNoteUpdate.etudiant.id,
+          idSemestre: this.semestre,
+          idSession: this.session,
+          etudiant: this.selectedNoteUpdate.etudiant.id,
+          noteEc: this.selectedNoteUpdate.noteEc
+        }
+        console.log('Add Npote params', params)
+        this.$store.dispatch('note/updateNote', params)
+          .then((res) => {
+            console.log(res)
+            this.modalUpdateNote = false
+            this.$alert.success('Modifié avec succès')
+          })
+          .catch((err) => {
+            console.log('Error Update Notes', err)
+            this.$alert.error('Une erreur est survenue lors de la suppression')
+          })
+      },
+      openUpdateNoteModal (selection) {
+        this.selectedNoteUpdate = selection.rows[0].data
+        this.OldselectedNoteUpdate = JSON.parse(JSON.stringify(selection.rows[0].data))
+        this.modalUpdateNote = true
+      },
+      actionModalOpen () {
+        if (this.etudiantsFiltred.length > 0) {
+          document.getElementById('matricule').firstElementChild.children[1].focus()
+        }
+      },
+      checkEtudiant () {
+        if (!this.isSelectedEtudiant && this.etudiantsFiltred.length > 0) {
+          this.etudiant.numero = ''
+        }
+      },
+      checkEtudiant2 () {
+        if (this.etudiant.id !== null) {
+          console.log('MIDITRA ATO')
+          this.etudiant = {
+            id: null,
+            numero: '',
+            note: this.oldEtudiant.note,
+            nom: '',
+            prenom: ''
+          }
+          let etudiant = filter(this.etudiantsFiltredSave, (o) => {
+            console.log('compare ' + o.label + 'avec' + this.oldEtudiant.numero)
+            return o.label === this.oldEtudiant.numero
+          })
+          this.etudiantsFiltred.push(etudiant[0])
+        }
+      },
+      focusToNote () {
+        document.getElementById('note').firstElementChild.children[1].focus()
+      },
+      showPreviousNotes () {
+        if (!this.previous) {
+          this.previous = true
+        }
+        else {
+          this.indexArrayEtudiant--
+        }
+        let previous = this.arrayEtudiantModal[this.indexArrayEtudiant]
+        this.etudiant = previous
+        this.oldEtudiant = JSON.parse(JSON.stringify(previous))
+      },
+      addToNoteToBeSend (etudiant) {
+        this.$v.etudiant.$touch()
+        if (this.$v.etudiant.$error) {
+          if (!this.$v.etudiant.between) {
+            this.$alert.error('Veuillez saisir une note entre 0 et 20')
+          }
+          else {
+            this.$alert.error('Veuillez verifier tous les champs')
+          }
+        }
+        else {
+          document.getElementById('matricule').firstElementChild.children[1].focus()
+          if (this.previous) {
+            console.log('ato eh')
+            let var1 = this.arrayEtudiantModal.length - 1
+            let var2 = var1 - this.indexArrayEtudiant
+            console.log('var2', var2)
+            if (var2 > 0) {
+              this.arrayEtudiantModal.splice(this.indexArrayEtudiant, 1, this.etudiant)
+              this.indexArrayEtudiant++
+              this.etudiant = this.arrayEtudiantModal[this.indexArrayEtudiant]
+            }
+            else if (var2 === 0) {
+              this.arrayEtudiantModal.splice(this.indexArrayEtudiant, 1, this.etudiant)
+              if (this.etudiantsFiltred.length > 0) {
+                this.etudiant = {
+                  id: null,
+                  numero: '',
+                  note: '',
+                  nom: '',
+                  prenom: ''
+                }
+              }
+              this.previous = false
+            }
+            else {
+              console.log('PREMIER ADD')
+              this.addTheNote(etudiant)
+            }
+          }
+          else {
+            console.log('SECOND ADD')
+            this.previous = false
+            this.addTheNote(etudiant)
+          }
+        }
+      },
+      addTheNote (etudiant) {
+        this.isSelectedEtudiant = false
+        this.arrayEtudiantModal.push(etudiant)
+        this.indexArrayEtudiant++
+        console.log('ilay etudiant', etudiant)
+        let compareId = (at) => {
+          return at.value.id === etudiant.id
+        }
+        let index = this.etudiantsFiltred.findIndex(compareId)
+        this.etudiantsFiltred.splice(index, 1)
+        if (this.etudiantsFiltred.length > 0) {
+          this.etudiant = {
+            id: null,
+            numero: '',
+            note: '',
+            nom: '',
+            prenom: ''
+          }
+        }
+      },
+      search (terms, done) {
+        console.log('terms', terms)
+        setTimeout(() => {
+          done(this.etudiantsFiltred.filter(etudiant => {
+            return (etudiant.value.numeroMatricule).match(terms)
+          }))
+        }, 100)
+      },
+      selected (item) {
+        this.isSelectedEtudiant = true
+        console.log(item)
+        Toast.create(item.value.idPersonne.nom + ' ' + item.value.idPersonne.prenom)
+        this.etudiant.numero = item.value.numeroMatricule
+        this.etudiant.nom = item.value.idPersonne.nom
+        this.etudiant.prenom = item.value.idPersonne.prenom
+        this.etudiant.id = item.value.id
+      },
+      getEtudiantByFilter (notes) {
+        let params = {
+          idParcours: this.parcours,
+          idSemestre: this.semestre,
+          idAnneeUniversitaire: this.annee
+        }
+        this.$store.dispatch('note/getEtudiantByFilter', params)
+          .then((res) => {
+            this.etudiantsFiltredSave = []
+            this.etudiantsFiltred = []
+            map(res, e => {
+              let etudiant = {
+                label: e.numeroMatricule,
+                value: e
+              }
+              this.etudiantsFiltredSave.push(etudiant)
+              this.etudiantsFiltred.push(etudiant)
+            })
+            notes.forEach((n) => {
+              this.etudiantsFiltred = this.etudiantsFiltred.filter(e => e.value.numeroMatricule !== n.etudiant.numeroMatricule)
+            })
+            console.log('consoleLog après map', this.etudiantsFiltred)
+          })
+          .catch((err) => {
+            console.log('error get etudiant by filter', err)
+          })
+      },
+      getNotesByFilter (ec) {
+        Loading.show()
+        let params = {
+          idEc: ec.id,
+          idAnneeUniversitaire: this.annee,
+          idSemestre: this.semestre,
+          idSession: this.session
+        }
+        let dispatchString = this.session === 0 ? 'note/getNoteDefinitivesByParams' : 'note/getNotesByFilter'
+        this.$store.dispatch(dispatchString, params)
+          .then((res) => {
+            this.etudiants = res
+            this.getEtudiantByFilter(res)
+            Loading.hide()
+          })
+          .catch((err) => {
+            console.log('error getting filtered etudiant', err)
+            Loading.hide()
+          })
+      },
+      setSelectedEc (ec) {
+        this.selectedEc = ec
+      },
+      openNoteModal () {
+        this.noteModal = true
+        /* setTimeout(() => {
+          let element = document.getElementById('matricule').firstElementChild.children[1].focus()
+          console.log('element', element)
+        }, 100) */
+      },
+      supprimerEtudiant (selection) {
+        Dialog.create({
+          title: '<div style="color: red;">Suppression</div>',
+          message: `Voulez-vous vraiment supprimer cet etudiant?`,
+          buttons: [
+            'Annuler',
+            {
+              label: '<div style="color: red;">Oui, supprimer définitivement</div>',
+              handler: () => {
+                alert('Fonction pour supprimer un etudiant ...')
+              }
+            }
+          ]
+        })
+      },
+      insererEtudiant () {
+        this.notesToSend = []
+        map(this.arrayEtudiantModal, e => {
+          let note = []
+          note = {
+            presenceSessionPK: {
+              id: this.selectedEc.id,
+              idSemestre: this.semestre,
+              idAnneeUniversitaire: this.annee,
+              idEtudiant: e.id,
+              idSession: this.session
+            },
+            noteEc: e.note
+          }
+          this.notesToSend.push(note)
+        })
+        this.notesWrapper = {
+          tabPresenceSession: this.notesToSend
+        }
+        this.verificationModal = true
+      },
+      voirDetailEtudiant () {
+        alert('Fonction pour voir les details de l\'étudiant ...')
+        this.openDetailsEtudiantModal = true
+      },
+      toggleSelect () {
+        for (let i = 0; i < this.$refs.datatable.rowSelection.length; i++) {
+          this.$set(this.$refs.datatable.rowSelection, i, !this.selectAll)
+        }
+        this.selectAll = !this.selectAll
+      },
+      insererNotesEtudiants () {
+        this.$store.dispatch('note/addAllNotes', this.notesWrapper)
+          .then((res) => {
+            console.log('res Add All', res)
+            this.verificationModal = false
+            this.noteModal = false
+            this.getNotesByFilter(this.selectedEc)
+            this.$alert.success('Ajout avec succès')
+          })
+          .catch((err) => {
+            console.log('err add All Notes', err)
+            this.$alert.error('Une erreur est survenue lors de l\'ajout')
+          })
+      },
+      validerNotes () {
+        this.validationEnCours = true
+        Axios.put(`/api/notedefinitives/valider/${this.annee}/${this.semestre}/${this.selectedEc.id}/${this.session}`)
+          .then((res) => {
+            console.log(res.data)
+            this.$alert.success('Notes validés avec succès')
+            this.checkIfNoteSessionValide()
+            this.validationEnCours = false
+          })
+          .catch((err) => {
+            this.$alert.error(err.response.data)
+            this.checkIfNoteSessionValide()
+            this.validationEnCours = false
+          })
+      },
+      checkIfNoteSessionValide () {
+        this.$store.dispatch('checkNoteEcSessionValide', {
+          idAnnee: this.annee,
+          idSemestre: this.semestre,
+          idSession: this.session,
+          idEc: this.selectedEc.id
+        })
+          .then((res) => {
+            this.isNoteSessionValide = res
+            console.log('Session valide: ', res)
+            if (this.isNoteSessionValide) {
+              console.log('Ec Session VALIDE')
+            }
+            else {
+              console.log('Ec Session NON VALIDE')
+            }
+          })
+          .catch((err) => {
+            console.log('Erreur session valide: ', err)
+          })
+      },
+      fillSessions () {
+        this.$store.dispatch('session/getAllSession')
+          .then((sessions) => {
+            this.sessionOptions = sessions.map((session) => {
+              return {
+                label: session.libelle,
+                value: session.id,
+                icon: 'extension'
+              }
+            })
+            this.sessionOptions.push({
+              label: 'Note définitive',
+              value: 0,
+              icon: 'extension'
+            })
+            this.session = first(this.sessionOptions).value
+          })
+          .catch((err) => {
+            console.log('Cannot get all sessions', err)
+          })
+      }
+    },
+    mounted () {
+      this.fillSessions()
+      this.$store.dispatch('getFonction')
+        .then((fonction) => {
+          this.fonction = fonction
+          let {vars} = fonction
+          this.annee = vars.ue.anneeUniversitaire.id
+          this.mention = vars.mention.id
+          this.parcours = vars.parcours.id
+          this.semestre = vars.ue.semestre.semestrePK.id
+          this.selectedEc = vars.ec
+          this.ue = vars.ue
+        })
+      /* this.$store.dispatch('listEtudiants') */
+      this.$refs.voirDetailsModal.$on('close', () => {
+        this.openDetailsEtudiantModal = false
+      })
+      this.notes = []
+    }
+  }
+</script>
+
+<style lang="stylus">
+  ._no-padding
+    padding 0 !important
+
+  ._modal-content
+    padding 15px 70px
+    border-bottom 1px solid whitesmoke
+
+  ._noteModal, ._verificationModal
+    .layout-header
+      box-shadow none
+
+    .layout-footer
+      box-shadow none
+      border-top 1px solid lightgrey
+
+  @media only screen and (max-width: 500px) {
+    ._modal-content {
+      padding: 10px 10px;
+      border-bottom: 1px solid whitesmoke;
+    }
+  }
+
+  pre {
+    padding: 10px;
+    background: #fafafa;
+    font: 12px/18px Consolas,monospace,serif;
+    color: #444;
+    -moz-tab-size: 4;
+    tab-size: 4;
+    overflow: auto;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+  }
+</style>
